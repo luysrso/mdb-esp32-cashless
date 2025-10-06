@@ -260,326 +260,325 @@ void mdb_cashless_loop(void *pvParameters) {
 
 				// Command decoding based on incoming data
 				switch (coming_read & BIT_CMD_SET) {
-
-				case RESET: {
-					uint8_t checksum_ = read_9((uint8_t*) 0);
-
-					if (machine_state == VEND_STATE) {
-						// Reset during VEND_STATE is interpreted as VEND_SUCCESS
-					}
-
-					machine_state = INACTIVE_STATE;
-					cashless_reset_todo = true;
-
-					ESP_LOGI( TAG, "RESET");
-					break;
-				}
-				case SETUP: {
-					switch (read_9(&checksum)) {
-
-					case CONFIG_DATA: {
-						uint8_t vmcFeatureLevel = read_9(&checksum);
-						uint8_t vmcColumnsOnDisplay = read_9(&checksum);
-						uint8_t vmcRowsOnDisplay = read_9(&checksum);
-						uint8_t vmcDisplayInfo = read_9(&checksum);
-
+					case RESET: {
 						uint8_t checksum_ = read_9((uint8_t*) 0);
 
-						machine_state = DISABLED_STATE;
-
-						mdb_payload[0] = 0x01;        	// Reader Config Data
-						mdb_payload[1] = 1;           	// Reader Feature Level
-						mdb_payload[2] = 0xff;        	// Country Code High
-						mdb_payload[3] = 0xff;        	// Country Code Low
-						mdb_payload[4] = 1;           	// Scale Factor
-						mdb_payload[5] = 2;           	// Decimal Places
-						mdb_payload[6] = 3; 			// Maximum Response Time (5s)
-						mdb_payload[7] = 0b00001001;  	// Miscellaneous Options
-						available_tx = 8;
-
-						break;
-					}
-					case MAX_MIN_PRICES: {
-
-						uint16_t maxPrice = (read_9(&checksum) << 8) | read_9(&checksum);
-						uint16_t minPrice = (read_9(&checksum) << 8) | read_9(&checksum);
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-
-						break;
-					}
-					}
-
-					break;
-				}
-				case POLL: {
-
-					uint8_t checksum_ = read_9((uint8_t*) 0);
-
-					if (outsequence_todo) {
-						// Command out of sequence
-						outsequence_todo = false;
-
-						mdb_payload[0] = 0x0b;
-						available_tx = 1;
-
-					} else if (cashless_reset_todo) {
-						// Just reset
-						cashless_reset_todo = false;
-						mdb_payload[0] = 0x00;
-						available_tx = 1;
-
-					} else if (vend_approved_todo) {
-						// Vend approved
-						vend_approved_todo = false;
-
-						mdb_payload[0] = 0x05;
-						mdb_payload[1] = itemPrice >> 8;
-						mdb_payload[2] = itemPrice;
-						available_tx = 3;
-
-					} else if (vend_denied_todo) {
-						// Vend denied
-						vend_denied_todo = false;
-
-						mdb_payload[0] = 0x06;
-						available_tx = 1;
-						machine_state = IDLE_STATE;
-
-					} else if (session_end_todo) {
-						// End session
-						session_end_todo = false;
-
-						mdb_payload[0] = 0x07;
-						available_tx = 1;
-						machine_state = ENABLED_STATE;
-
-					} else if (machine_state == ENABLED_STATE && xQueueReceive(mdbSessionQueue, &fundsAvailable, 0)) {
-						// Begin session
-						session_begin_todo = false;
-
-						machine_state = IDLE_STATE;
-
-						uint16_t fundsAvailable_ = (fundsAvailable == 0x0000 ? 0xffff : fundsAvailable);
-
-						mdb_payload[0] = 0x03;
-						mdb_payload[1] = fundsAvailable_ >> 8;
-						mdb_payload[2] = fundsAvailable_;
-						available_tx = 3;
-						
-						time( &session_begin_time);
-
-					} else if (session_cancel_todo) {
-						// Cancel session
-						session_cancel_todo = false;
-
-						mdb_payload[0] = 0x04;
-						available_tx = 1;
-
-					} else {
-
-						time_t now;
-						time( &now);
-						
-						if (machine_state >= IDLE_STATE && (now - session_begin_time /*elapsed*/) > 90 /*sec*/) {
-							session_cancel_todo = true;
+						if (machine_state == VEND_STATE) {
+							// cancelar/descargar autorización si aplica
+    						// NO marcar éxito
 						}
-					}
 
-					break;
-				}
-				case VEND: {
-					switch (read_9(&checksum)) {
-					case VEND_REQUEST: {
+						machine_state = INACTIVE_STATE;
+						cashless_reset_todo = true;
 
-						itemPrice = (read_9(&checksum) << 8) | read_9(&checksum);
-						itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-
-						machine_state = VEND_STATE;
-
-                        if(fundsAvailable){
-                            if (itemPrice <= fundsAvailable) {
-                                vend_approved_todo = true;
-                            } else {
-                                vend_denied_todo = true;
-                            }
-                        }
-
-						/* PIPE_BLE */
-						uint8_t payload[19];
-						payload[0] = 0x0a;
-
-						xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
-
-                        sendBleNotification((char*) &payload, sizeof(payload));
-
-						ESP_LOGI( TAG, "VEND_REQUEST");
+						ESP_LOGI( TAG, "RESET");
 						break;
 					}
-					case VEND_CANCEL: {
+					case SETUP: {
+						switch (read_9(&checksum)) {
 
-						uint8_t checksum_ = read_9((uint8_t*) 0);
+						case CONFIG_DATA: {
+							uint8_t vmcFeatureLevel = read_9(&checksum);
+							uint8_t vmcColumnsOnDisplay = read_9(&checksum);
+							uint8_t vmcRowsOnDisplay = read_9(&checksum);
+							uint8_t vmcDisplayInfo = read_9(&checksum);
 
-						vend_denied_todo = true;
+							uint8_t checksum_ = read_9((uint8_t*) 0);
 
-						break;
-					}
-					case VEND_SUCCESS: {
+							machine_state = DISABLED_STATE;
 
-						itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
+							mdb_payload[0] = 0x01;        	// Reader Config Data
+							mdb_payload[1] = 1;           	// Reader Feature Level
+							mdb_payload[2] = 0xff;        	// Country Code High
+							mdb_payload[3] = 0xff;        	// Country Code Low
+							mdb_payload[4] = 1;           	// Scale Factor
+							mdb_payload[5] = 2;           	// Decimal Places
+							mdb_payload[6] = 3; 			// Maximum Response Time (5s)
+							mdb_payload[7] = 0b00001001;  	// Miscellaneous Options
+							available_tx = 8;
 
-						uint8_t checksum_ = read_9((uint8_t*) 0);
+							break;
+						}
+						case MAX_MIN_PRICES: {
 
-						machine_state = IDLE_STATE;
+							uint16_t maxPrice = (read_9(&checksum) << 8) | read_9(&checksum);
+							uint16_t minPrice = (read_9(&checksum) << 8) | read_9(&checksum);
 
-						/* PIPE_BLE */
-						uint8_t payload[19];
-						payload[0] = 0x0b;
+							uint8_t checksum_ = read_9((uint8_t*) 0);
 
-						xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
-
-                        sendBleNotification((char*) &payload, sizeof(payload));
-
-						ESP_LOGI( TAG, "VEND_SUCCESS");
-						break;
-					}
-					case VEND_FAILURE: {
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-
-						machine_state = IDLE_STATE;
-
-					    /* PIPE_BLE */
-						uint8_t payload[19];
-						payload[0] = 0x0c;
-
-						xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
-
-                        sendBleNotification((char*) &payload, sizeof(payload));
-						break;
-					}
-					case SESSION_COMPLETE: {
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-
-						session_end_todo = true;
-
-			            /* PIPE_BLE */
-						uint8_t payload[19];
-						payload[0] = 0x0d;
-
-						xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
-
-                        sendBleNotification((char*) &payload, sizeof(payload));
-
-						ESP_LOGI( TAG, "SESSION_COMPLETE");
-						break;
-					}
-					case CASH_SALE: {
-
-						uint16_t itemPrice = (read_9(&checksum) << 8) | read_9(&checksum);
-						uint16_t itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-
-						if (checksum_ == checksum) {
-
-                            uint8_t payload[19];
-                            payload[0] = 0x21;
-
-						    xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
-
-						  	char topic[64];
-						  	snprintf(topic, sizeof(topic), "/domain/%s/sale", my_subdomain);
-
-							esp_mqtt_client_publish(mqttClient, topic, (char*) &payload, sizeof(payload), 1, 0);
-
-							ESP_LOGI( TAG, "CASH_SALE");
+							break;
+						}
 						}
 
 						break;
 					}
-					}
-
-					break;
-				}
-				case READER: {
-					switch (read_9(&checksum)) {
-					case READER_DISABLE: {
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-						machine_state = DISABLED_STATE;
-
-						break;
-					}
-					case READER_ENABLE: {
-
-						uint8_t checksum_ = read_9((uint8_t*) 0);
-						machine_state = ENABLED_STATE;
-
-						break;
-					}
-					case READER_CANCEL: {
+					case POLL: {
 
 						uint8_t checksum_ = read_9((uint8_t*) 0);
 
-						mdb_payload[ 0 ] = 0x08; // Canceled
-						available_tx = 1;
+						if (outsequence_todo) {
+							// Command out of sequence
+							outsequence_todo = false;
+
+							mdb_payload[0] = 0x0b;
+							available_tx = 1;
+
+						} else if (cashless_reset_todo) {
+							// Just reset
+							cashless_reset_todo = false;
+							mdb_payload[0] = 0x00;
+							available_tx = 1;
+
+						} else if (vend_approved_todo) {
+							// Vend approved
+							vend_approved_todo = false;
+
+							mdb_payload[0] = 0x05;
+							mdb_payload[1] = itemPrice >> 8;
+							mdb_payload[2] = itemPrice;
+							available_tx = 3;
+
+						} else if (vend_denied_todo) {
+							// Vend denied
+							vend_denied_todo = false;
+
+							mdb_payload[0] = 0x06;
+							available_tx = 1;
+							machine_state = IDLE_STATE;
+
+						} else if (session_end_todo) {
+							// End session
+							session_end_todo = false;
+
+							mdb_payload[0] = 0x07;
+							available_tx = 1;
+							machine_state = ENABLED_STATE;
+
+						} else if (machine_state == ENABLED_STATE && xQueueReceive(mdbSessionQueue, &fundsAvailable, 0)) {
+							// Begin session
+							session_begin_todo = false;
+
+							machine_state = IDLE_STATE;
+
+							uint16_t fundsAvailable_ = (fundsAvailable == 0x0000 ? 0xffff : fundsAvailable);
+
+							mdb_payload[0] = 0x03;
+							mdb_payload[1] = fundsAvailable_ >> 8;
+							mdb_payload[2] = fundsAvailable_;
+							available_tx = 3;
+							
+							time( &session_begin_time);
+
+						} else if (session_cancel_todo) {
+							// Cancel session
+							session_cancel_todo = false;
+
+							mdb_payload[0] = 0x04;
+							available_tx = 1;
+
+						} else {
+
+							time_t now;
+							time( &now);
+							
+							if (machine_state >= IDLE_STATE && (now - session_begin_time /*elapsed*/) > 90 /*sec*/) {
+								session_cancel_todo = true;
+							}
+						}
 
 						break;
 					}
-					}
+					case VEND: {
+						switch (read_9(&checksum)) {
+							case VEND_REQUEST: {
 
-					break;
-				}
-				case EXPANSION: {
+								itemPrice = (read_9(&checksum) << 8) | read_9(&checksum);
+								itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
 
-					switch (read_9(&checksum)) {
-					case REQUEST_ID: {
+								uint8_t checksum_ = read_9((uint8_t*) 0);
 
-						mdb_payload[ 0 ] = 0x09; 	// Peripheral ID
-						mdb_payload[ 1 ] = ' '; 	// Manufacture code
-						mdb_payload[ 2 ] = ' ';
-						mdb_payload[ 3 ] = ' ';
+								machine_state = VEND_STATE;
 
-						mdb_payload[ 4 ] = ' '; 	// Serial number
-						mdb_payload[ 5 ] = ' ';
-						mdb_payload[ 6 ] = ' ';
-						mdb_payload[ 7 ] = ' ';
-						mdb_payload[ 8 ] = ' ';
-						mdb_payload[ 9 ] = ' ';
-						mdb_payload[ 10 ] = ' ';
-						mdb_payload[ 11 ] = ' ';
-						mdb_payload[ 12 ] = ' ';
-						mdb_payload[ 13 ] = ' ';
-						mdb_payload[ 14 ] = ' ';
-						mdb_payload[ 15 ] = ' ';
+								if(fundsAvailable){
+									if (itemPrice <= fundsAvailable) {
+										vend_approved_todo = true;
+									} else {
+										vend_denied_todo = true;
+									}
+								}
 
-						mdb_payload[ 16 ] = ' '; 	// Model number
-						mdb_payload[ 17 ] = ' ';
-						mdb_payload[ 18 ] = ' ';
-						mdb_payload[ 19 ] = ' ';
-						mdb_payload[ 20 ] = ' ';
-						mdb_payload[ 21 ] = ' ';
-						mdb_payload[ 22 ] = ' ';
-						mdb_payload[ 23 ] = ' ';
-						mdb_payload[ 24 ] = ' ';
-						mdb_payload[ 25 ] = ' ';
-						mdb_payload[ 26 ] = ' ';
-						mdb_payload[ 27 ] = ' ';
+								/* PIPE_BLE */
+								uint8_t payload[19];
+								payload[0] = 0x0a;
 
-						mdb_payload[ 28 ] = ' '; 	// Software version
-						mdb_payload[ 29 ] = ' ';
+								xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
 
-						available_tx = 30;
+								sendBleNotification((char*) &payload, sizeof(payload));
+
+								ESP_LOGI( TAG, "VEND_REQUEST");
+								break;
+							}
+							case VEND_CANCEL: {
+
+								uint8_t checksum_ = read_9((uint8_t*) 0);
+
+								vend_denied_todo = true;
+
+								break;
+							}
+							case VEND_SUCCESS: {
+
+								itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
+
+								uint8_t checksum_ = read_9((uint8_t*) 0);
+
+								machine_state = IDLE_STATE;
+
+								/* PIPE_BLE */
+								uint8_t payload[19];
+								payload[0] = 0x0b;
+
+								xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
+
+								sendBleNotification((char*) &payload, sizeof(payload));
+
+								ESP_LOGI( TAG, "VEND_SUCCESS");
+								break;
+							}
+							case VEND_FAILURE: {
+
+								uint8_t checksum_ = read_9((uint8_t*) 0);
+
+								machine_state = IDLE_STATE;
+
+								/* PIPE_BLE */
+								uint8_t payload[19];
+								payload[0] = 0x0c;
+
+								xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
+
+								sendBleNotification((char*) &payload, sizeof(payload));
+								break;
+							}
+							case SESSION_COMPLETE: {
+
+								uint8_t checksum_ = read_9((uint8_t*) 0);
+
+								session_end_todo = true;
+
+								/* PIPE_BLE */
+								uint8_t payload[19];
+								payload[0] = 0x0d;
+
+								xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
+
+								sendBleNotification((char*) &payload, sizeof(payload));
+
+								ESP_LOGI( TAG, "SESSION_COMPLETE");
+								break;
+							}
+							case CASH_SALE: {
+
+								uint16_t itemPrice = (read_9(&checksum) << 8) | read_9(&checksum);
+								uint16_t itemNumber = (read_9(&checksum) << 8) | read_9(&checksum);
+
+								uint8_t checksum_ = read_9((uint8_t*) 0);
+
+								if (checksum_ == checksum) {
+
+									uint8_t payload[19];
+									payload[0] = 0x21;
+
+									xorEncodeWithPasskey(&itemPrice, &itemNumber, (uint8_t*) &payload);
+
+									char topic[64];
+									snprintf(topic, sizeof(topic), "/domain/%s/sale", my_subdomain);
+
+									esp_mqtt_client_publish(mqttClient, topic, (char*) &payload, sizeof(payload), 1, 0);
+
+									ESP_LOGI( TAG, "CASH_SALE");
+								}
+
+								break;
+							}
+						}
 						break;
 					}
-					}
+					case READER: {
+						switch (read_9(&checksum)) {
+						case READER_DISABLE: {
 
-					break;
-				}
+							uint8_t checksum_ = read_9((uint8_t*) 0);
+							machine_state = DISABLED_STATE;
+
+							break;
+						}
+						case READER_ENABLE: {
+
+							uint8_t checksum_ = read_9((uint8_t*) 0);
+							machine_state = ENABLED_STATE;
+
+							break;
+						}
+						case READER_CANCEL: {
+
+							uint8_t checksum_ = read_9((uint8_t*) 0);
+
+							mdb_payload[ 0 ] = 0x08; // Canceled
+							available_tx = 1;
+
+							break;
+						}
+						}
+
+						break;
+					}
+					case EXPANSION: {
+
+						switch (read_9(&checksum)) {
+						case REQUEST_ID: {
+
+							mdb_payload[ 0 ] = 0x09; 	// Peripheral ID
+							mdb_payload[ 1 ] = ' '; 	// Manufacture code
+							mdb_payload[ 2 ] = ' ';
+							mdb_payload[ 3 ] = ' ';
+
+							mdb_payload[ 4 ] = ' '; 	// Serial number
+							mdb_payload[ 5 ] = ' ';
+							mdb_payload[ 6 ] = ' ';
+							mdb_payload[ 7 ] = ' ';
+							mdb_payload[ 8 ] = ' ';
+							mdb_payload[ 9 ] = ' ';
+							mdb_payload[ 10 ] = ' ';
+							mdb_payload[ 11 ] = ' ';
+							mdb_payload[ 12 ] = ' ';
+							mdb_payload[ 13 ] = ' ';
+							mdb_payload[ 14 ] = ' ';
+							mdb_payload[ 15 ] = ' ';
+
+							mdb_payload[ 16 ] = ' '; 	// Model number
+							mdb_payload[ 17 ] = ' ';
+							mdb_payload[ 18 ] = ' ';
+							mdb_payload[ 19 ] = ' ';
+							mdb_payload[ 20 ] = ' ';
+							mdb_payload[ 21 ] = ' ';
+							mdb_payload[ 22 ] = ' ';
+							mdb_payload[ 23 ] = ' ';
+							mdb_payload[ 24 ] = ' ';
+							mdb_payload[ 25 ] = ' ';
+							mdb_payload[ 26 ] = ' ';
+							mdb_payload[ 27 ] = ' ';
+
+							mdb_payload[ 28 ] = ' '; 	// Software version
+							mdb_payload[ 29 ] = ' ';
+
+							available_tx = 30;
+							break;
+						}
+						}
+
+						break;
+					}
 				}
 
 				// Transmit the prepared payload via UART
