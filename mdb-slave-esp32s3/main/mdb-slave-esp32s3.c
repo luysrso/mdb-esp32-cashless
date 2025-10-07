@@ -527,6 +527,13 @@ void mdb_cashless_loop(void *pvParameters) {
 							mdb_payload[ 0 ] = 0x08; // Canceled
 							available_tx = 1;
 
+							vend_approved_todo = false;
+    						vend_denied_todo   = false;
+
+							if (machine_state == VEND_STATE) {
+								machine_state = IDLE_STATE;    // sesión sigue abierta
+							}
+
 							break;
 						}
 						}
